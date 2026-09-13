@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Snap/Note">
+<title>Snap/Note</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#17181a;
+    --surface:#202124;
+    --surface-2:#26282b;
+    --surface-hover:#2c2e32;
+    --border:rgba(255,255,255,0.09);
+    --border-strong:rgba(255,255,255,0.18);
+    --text:rgba(255,255,255,0.92);
+    --text-dim:rgba(255,255,255,0.55);
+    --text-faint:rgba(255,255,255,0.34);
+    --accent:#3b9eff;
+    --accent-soft:rgba(59,158,255,0.16);
+    --accent-strong:#5cadff;
+    --ok:#4caf6d;
+    --ok-soft:rgba(76,175,109,0.15);
+    --warn:#e5534b;
+    --warn-soft:rgba(229,83,75,0.15);
+    --line:rgba(255,255,255,0.16);
+    --radius:10px;
+    --radius-lg:14px;
+    --shadow-md:0 4px 20px rgba(0,0,0,0.35);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;overscroll-behavior:none;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Inter',-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+  #app{position:fixed;inset:0;}
+
+  /* ---------- top label ---------- */
+  .top-label{
+    position:fixed;top:calc(14px + env(safe-area-inset-top));left:16px;z-index:20;
+    font-weight:700;font-size:15px;letter-spacing:-0.01em;color:var(--text);
+    pointer-events:none;
+    background:rgba(23,24,26,0.6);backdrop-filter:blur(6px);
+    padding:6px 12px;border-radius:20px;border:1px solid var(--border);
+  }
+  .top-label span{color:var(--text-faint);font-weight:500;}
+
+  /* ---------- canvas ---------- */
+  #canvas-viewport{
+    position:absolute;inset:0;overflow:hidden;
+    background:
+      radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px) 0 0/28px 28px,
+      var(--bg);
+    touch-action:none;
+    cursor:grab;
+  }
+  #canvas-viewport.panning{cursor:grabbing;}
+  #canvas-world{
+    position:absolute;left:50%;top:50%;width:0;height:0;
+    transform-origin:0 0;
+    will-change:transform;
+  }
+  #connector-svg{position:absolute;left:-6000px;top:-6000px;width:12000px;height:12000px;overflow:visible;pointer-events:none;}
+  #connector-svg path{fill:none;stroke:var(--line);stroke-width:1.5;}
+
+  .hub-node{
+    position:absolute;left:0;top:0;transform:translate(-50%,-50%);
+    background:var(--accent);color:#fff;
+    padding:12px 14px 12px 20px;border-radius:24px;
+    font-weight:700;font-size:14px;letter-spacing:-0.01em;
+    box-shadow:0 4px 24px rgba(59,158,255,0.35);
+    white-space:nowrap;cursor:pointer;
+    display:flex;align-items:center;gap:8px;
+  }
+  .hub-node.branch-target{box-shadow:0 0 0 3px rgba(255,255,255,0.55), 0 4px 24px rgba(59,158,255,0.35);}
+  .hub-label{outline:none;}
+  .hub-label[contenteditable="true"]{cursor:text;border-bottom:1px dashed rgba(255,255,255,0.65);}
+  .hub-edit-btn{
+    background:rgba(255,255,255,0.22);border:none;color:#fff;
+    width:20px;height:20px;border-radius:50%;font-size:10px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  }
+  .hub-edit-btn:hover{background:rgba(255,255,255,0.35);}
+
+  .photo-node, .note-node{
+    position:absolute;left:0;top:0;transform:translate(-50%,-50%);
+    width:140px;
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
+    overflow:hidden;cursor:pointer;box-shadow:var(--shadow-md);
+    touch-action:none;
+  }
+  .photo-node.branch-target, .note-node.branch-target{
+    box-shadow:0 0 0 3px var(--accent), var(--shadow-md);
+  }
+  .note-node{background:#2a2419;padding:12px 12px 10px;min-height:88px;}
+  .note-node .note-icon{font-size:13px;color:#f0c674;margin-bottom:6px;display:block;}
+  .note-node .node-title{white-space:normal !important;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .note-node .note-body-preview{
+    font-size:11px;color:var(--text-dim);margin-top:4px;line-height:1.4;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .photo-node .thumb-wrap{position:relative;background:var(--surface-2);}
+  .photo-node img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;pointer-events:none;}
+  .node-badge{
+    position:absolute;top:6px;left:6px;
+    background:rgba(0,0,0,0.55);color:#fff;font-size:10px;font-weight:700;
+    min-width:18px;height:18px;padding:0 5px;border-radius:18px;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .node-status-dot{
+    position:absolute;top:8px;right:8px;width:8px;height:8px;border-radius:50%;
+    background:var(--text-faint);
+  }
+  .node-status-dot.done{background:var(--ok);}
+  .node-status-dot.processing{background:var(--accent);animation:pulse 1.1s infinite;}
+  .node-status-dot.error{background:var(--warn);}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.3;}}
+  .node-meta{padding:8px 10px 10px;}
+  .node-title{
+    font-size:12px;font-weight:600;color:var(--text);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+
+  .empty-hint{
+    position:absolute;left:0;top:70px;transform:translate(-50%,0);
+    color:var(--text-dim);font-size:13px;text-align:center;width:220px;
+    pointer-events:none;line-height:1.5;
+  }
+
+  /* ---------- bottom toolbar ---------- */
+  .toolbar{
+    position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));
+    transform:translateX(-50%);z-index:20;
+    display:flex;align-items:center;gap:4px;
+    background:rgba(32,33,36,0.92);backdrop-filter:blur(10px);
+    border:1px solid var(--border);border-radius:26px;
+    padding:6px;box-shadow:var(--shadow-md);
+  }
+  .tb-btn{
+    border:none;background:transparent;color:var(--text-dim);
+    font-family:'Inter',sans-serif;font-weight:600;font-size:15px;
+    width:44px;height:44px;border-radius:20px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .tb-btn:hover{background:var(--surface-hover);color:var(--text);}
+  .tb-btn:active{transform:scale(0.94);}
+  .tb-divider{width:1px;height:22px;background:var(--border-strong);margin:0 3px;}
+  .tb-capture{
+    background:var(--accent);color:#fff;border-radius:20px;
+    padding:0 18px;height:44px;font-weight:700;font-size:14px;
+    display:flex;align-items:center;gap:6px;
+  }
+  .tb-capture:hover{background:var(--accent-strong);}
+  .tb-zoom-label{font-size:12px;font-weight:600;color:var(--text-dim);width:44px;text-align:center;}
+
+  /* ---------- detail drawer ---------- */
+  .drawer-backdrop{
+    position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:40;
+    opacity:0;pointer-events:none;transition:opacity .2s ease;
+  }
+  .drawer-backdrop.active{opacity:1;pointer-events:auto;}
+  .drawer{
+    position:fixed;top:0;right:0;bottom:0;width:420px;max-width:92vw;
+    background:var(--surface);border-left:1px solid var(--border);z-index:41;
+    transform:translateX(100%);transition:transform .22s ease;
+    overflow-y:auto;
+    padding-top:env(safe-area-inset-top);
+  }
+  .drawer.active{transform:translateX(0);}
+  .drawer-inner{padding:22px 24px 60px;}
+  .drawer-close{
+    position:absolute;top:calc(16px + env(safe-area-inset-top));right:16px;
+    width:32px;height:32px;border-radius:16px;border:1px solid var(--border);
+    background:var(--surface-2);color:var(--text-dim);cursor:pointer;font-size:15px;
+  }
+  .drawer-close:hover{color:var(--text);background:var(--surface-hover);}
+  .field-label{font-size:12px;font-weight:600;color:var(--text-dim);margin:22px 0 8px;}
+  .field-label:first-of-type{margin-top:0;}
+  .title-input{
+    font-family:'Inter',sans-serif;font-size:22px;font-weight:800;letter-spacing:-0.01em;
+    background:transparent;border:none;color:var(--text);width:100%;
+    padding:2px 0;outline:none;
+  }
+  .title-input::placeholder{color:var(--text-faint);}
+  .frame-tag-line{font-size:12px;color:var(--text-dim);margin-top:4px;}
+  .photo-strip{display:flex;gap:8px;overflow-x:auto;padding:2px;}
+  .photo-strip img{height:90px;border-radius:var(--radius);border:1px solid var(--border);cursor:pointer;flex-shrink:0;object-fit:cover;}
+  textarea{
+    width:100%;font-family:'Inter',sans-serif;font-size:14px;line-height:1.6;
+    background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);
+    color:var(--text);padding:11px 13px;resize:vertical;outline:none;
+  }
+  textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+  .tags-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+  .tag-chip{border-radius:5px;padding:3px 9px;font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px;}
+  .tag-chip button{background:none;border:none;color:inherit;opacity:0.6;cursor:pointer;font-size:13px;padding:0;line-height:1;}
+  .tag-c0{background:#4a3a1a;color:#f0c674;}
+  .tag-c1{background:#4a2620;color:#ef9a8f;}
+  .tag-c2{background:#1c3d36;color:#7fd6c1;}
+  .tag-c3{background:#372a47;color:#c9a3ea;}
+  .tag-c4{background:#1e3548;color:#8ec4ec;}
+  .tag-c5{background:#33353a;color:#c7c9ce;}
+  .tag-add-input{
+    background:transparent;border:1px dashed var(--border-strong);border-radius:5px;
+    color:var(--text-dim);font-size:12px;padding:3px 9px;outline:none;width:80px;
+    font-family:'Inter',sans-serif;
+  }
+  .tag-add-input:focus{border-color:var(--accent);color:var(--text);}
+  .keypoints{list-style:none;padding:0;margin:0;}
+  .keypoints li{display:flex;align-items:flex-start;gap:9px;font-size:14px;line-height:1.6;padding:4px 0;}
+  .keypoints li::before{content:'•';color:var(--text-faint);flex-shrink:0;font-size:17px;line-height:1.3;}
+  .keypoints li input{flex:1;background:transparent;border:none;color:var(--text);font-family:inherit;font-size:inherit;outline:none;border-bottom:1px solid transparent;padding-bottom:1px;}
+  .keypoints li input:focus{border-bottom:1px solid var(--border-strong);}
+  .kp-del{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:13px;}
+  .kp-del:hover{color:var(--warn);}
+  .add-kp-btn{font-size:13px;color:var(--text-dim);background:none;border:none;cursor:pointer;padding:6px 0 6px 26px;font-family:'Inter',sans-serif;font-weight:500;}
+  .add-kp-btn:hover{color:var(--accent);}
+  details.raw-text{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface-2);}
+  details.raw-text summary{padding:10px 13px;cursor:pointer;font-size:13px;font-weight:600;color:var(--text-dim);list-style:none;display:flex;align-items:center;gap:6px;}
+  details.raw-text summary::before{content:'▸';font-size:10px;color:var(--text-faint);}
+  details[open].raw-text summary::before{content:'▾';}
+  details.raw-text summary::-webkit-details-marker{display:none;}
+  details.raw-text pre{font-family:'Inter',sans-serif;font-size:13px;white-space:pre-wrap;padding:0 13px 13px;margin:0;color:var(--text-dim);line-height:1.6;}
+  .drawer-footer{display:flex;justify-content:space-between;align-items:center;margin-top:32px;padding-top:16px;border-top:1px solid var(--border);}
+  .processing-banner{display:flex;align-items:center;gap:10px;background:var(--accent-soft);border-radius:var(--radius);padding:10px 14px;font-size:13px;color:var(--accent-strong);}
+  .error-banner{background:var(--warn-soft);border-radius:var(--radius);padding:10px 14px;font-size:13px;color:var(--warn);display:flex;justify-content:space-between;align-items:center;gap:10px;}
+  .setup-banner{background:var(--accent-soft);border-radius:var(--radius);padding:13px 15px;font-size:13px;color:var(--accent-strong);line-height:1.6;margin-bottom:18px;}
+  .setup-banner code{background:rgba(255,255,255,0.1);padding:1px 5px;border-radius:4px;color:var(--accent-strong);}
+
+  .btn{
+    font-family:'Inter',sans-serif;font-weight:600;font-size:13px;
+    border-radius:7px;border:1px solid var(--border-strong);
+    background:var(--surface-2);color:var(--text);
+    padding:8px 14px;cursor:pointer;
+  }
+  .btn:hover{background:var(--surface-hover);}
+  .btn:active{transform:translateY(1px);}
+  .btn-primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .btn-primary:hover{background:var(--accent-strong);}
+  .btn-warn{color:var(--warn);border-color:var(--warn);background:transparent;}
+  .btn-warn:hover{background:var(--warn-soft);}
+
+  /* ---------- modals (settings / confirm / viewer) ---------- */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:50;display:none;align-items:center;justify-content:center;padding:20px;}
+  .modal-backdrop.active{display:flex;}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);max-width:460px;width:100%;padding:22px;max-height:85vh;overflow-y:auto;box-shadow:var(--shadow-md);}
+  .modal h3{font-weight:700;margin:0 0 4px;font-size:18px;letter-spacing:-0.01em;}
+  .modal label{display:block;font-size:12px;font-weight:600;color:var(--text-dim);margin:16px 0 6px;}
+  .modal input[type=url]{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:9px 11px;font-size:13px;font-family:'Inter',sans-serif;outline:none;}
+  .modal input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+  .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;}
+  .img-viewer img{max-width:100%;max-height:75vh;border-radius:var(--radius);display:block;margin:0 auto;}
+  .hidden-input{display:none;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="top-label">Snap<span>/</span>Note</div>
+
+  <div id="canvas-viewport">
+    <div id="canvas-world">
+      <svg id="connector-svg"></svg>
+      <div class="hub-node" id="hub-node">
+        <span class="hub-label" id="hub-label" spellcheck="false">Snap/Note</span>
+        <button class="hub-edit-btn" id="hub-edit-btn" title="Rename">✎</button>
+      </div>
+      <div id="empty-hint" class="empty-hint" style="display:none;">Tap Capture below to add your first frame — it'll branch off from here.</div>
+      <div id="nodes-layer"></div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <button class="tb-capture" id="capture-btn">+ Capture</button>
+    <button class="tb-btn" id="note-btn" title="Add a text note">▤</button>
+    <div class="tb-divider"></div>
+    <button class="tb-btn" id="zoom-out-btn">－</button>
+    <button class="tb-btn tb-zoom-label" id="zoom-reset-btn">100%</button>
+    <button class="tb-btn" id="zoom-in-btn">＋</button>
+    <div class="tb-divider"></div>
+    <button class="tb-btn" id="settings-btn">⚙</button>
+    <button class="tb-btn" id="export-btn">⇩</button>
+  </div>
+
+  <input type="file" accept="image/*" capture="environment" multiple class="hidden-input" id="camera-input">
+</div>
+
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+<div class="drawer" id="drawer">
+  <button class="drawer-close" id="drawer-close">✕</button>
+  <div class="drawer-inner" id="drawer-inner"></div>
+</div>
+
+<div class="modal-backdrop" id="settings-modal">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="setup-banner">
+      AI conversion calls a small proxy you host, so your key never sits in this page. Get a free key from <code>aistudio.google.com/app/apikey</code>, deploy the included <code>worker.js</code> to Cloudflare Workers with it, and paste the worker's URL below. Without this set, photos are still captured and stored — you'll just fill in notes by hand.
+    </div>
+    <label for="endpoint-input">AI proxy URL (Cloudflare Worker)</label>
+    <input type="url" id="endpoint-input" placeholder="https://your-worker.workers.dev">
+    <div class="modal-actions">
+      <button class="btn" id="settings-cancel">Cancel</button>
+      <button class="btn btn-primary" id="settings-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="viewer-modal">
+  <div class="modal img-viewer" style="max-width:90vw;">
+    <img id="viewer-img" src="">
+    <div class="modal-actions"><button class="btn" id="viewer-close">Close</button></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="confirm-modal">
+  <div class="modal">
+    <h3>Delete frame?</h3>
+    <p style="color:var(--text-dim);font-size:13px;">This removes the photo and note. This can't be undone.</p>
+    <div class="modal-actions">
+      <button class="btn" id="confirm-cancel">Cancel</button>
+      <button class="btn btn-warn" id="confirm-ok">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const STORAGE_KEY = 'snapnote_frames_v2';
+  const COUNTER_KEY = 'snapnote_counter_v1';
+  const SETTINGS_KEY = 'snapnote_settings_v1';
+  const MAX_DIM = 1400;
+  const JPEG_QUALITY = 0.72;
+  const TAG_COLORS = 6;
+  const RING_COUNT = 8;
+  const BASE_RADIUS = 240;
+  const RING_GAP = 190;
+
+  let frames = loadFrames();
+  let counter = loadCounter();
+  let settings = loadSettings();
+  let selectedId = null;
+  let pendingDeleteId = null;
+  let pendingParentId = null; // which node a capture/note should branch from (null = hub)
+
+  // canvas state
+  let panX = 0, panY = 0, zoom = 1;
+  const viewport = document.getElementById('canvas-viewport');
+  const world = document.getElementById('canvas-world');
+  const nodesLayer = document.getElementById('nodes-layer');
+  const svg = document.getElementById('connector-svg');
+
+  // ---------- storage ----------
+  function loadFrames(){
+    try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+    catch(e){ return []; }
+  }
+  function saveFrames(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(frames)); }
+    catch(e){ alert('Storage is full. Export a backup and delete a few older frames.'); }
+  }
+  function loadCounter(){ return parseInt(localStorage.getItem(COUNTER_KEY) || '0', 10); }
+  function saveCounter(){ localStorage.setItem(COUNTER_KEY, String(counter)); }
+  function loadSettings(){
+    try{ return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {endpoint:'', hubName:'Snap/Note'}; }
+    catch(e){ return {endpoint:'', hubName:'Snap/Note'}; }
+  }
+  function saveSettings(){ localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }
+
+  function tagColorClass(str){
+    let hash = 0;
+    for(let i=0;i<str.length;i++){ hash = (hash*31 + str.charCodeAt(i)) >>> 0; }
+    return 'tag-c' + (hash % TAG_COLORS);
+  }
+
+  // ---------- radial layout ----------
+  function layoutPosition(slot){
+    const ring = Math.floor(slot / RING_COUNT);
+    const posInRing = slot % RING_COUNT;
+    const angle = (posInRing / RING_COUNT) * Math.PI * 2 + ring * (Math.PI / RING_COUNT);
+    const radius = BASE_RADIUS + ring * RING_GAP;
+    return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
+  }
+  function layoutChildPosition(parent, childIndex){
+    const parentAngle = Math.atan2(parent.y, parent.x) || 0;
+    const perRing = 5, arcSpread = Math.PI/2;
+    const ring = Math.floor(childIndex/perRing);
+    const posInRing = childIndex % perRing;
+    const angleOffset = (posInRing - (perRing-1)/2) * (arcSpread/perRing);
+    const angle = parentAngle + angleOffset;
+    const radius = 175 + ring*140;
+    return { x: parent.x + Math.cos(angle)*radius, y: parent.y + Math.sin(angle)*radius };
+  }
+  // migrate any frames missing x/y
+  frames.forEach(f=>{
+    if(typeof f.x !== 'number' || typeof f.y !== 'number'){
+      const p = layoutPosition((f.num||1)-1);
+      f.x = p.x; f.y = p.y;
+    }
+    if(f.parentId === undefined) f.parentId = null;
+    if(!f.type) f.type = 'photo';
+  });
+  // if a saved parentId no longer exists (deleted), fall back to hub
+  frames.forEach(f=>{
+    if(f.parentId && !frames.some(p=>p.id===f.parentId)) f.parentId = null;
+  });
+
+  // ---------- image capture & downscale ----------
+  function fileToDataURL(file){
+    return new Promise((resolve,reject)=>{
+      const r = new FileReader();
+      r.onload = ()=>resolve(r.result);
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+  }
+  function downscale(dataURL){
+    return new Promise((resolve)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        let {width,height} = img;
+        if(width>MAX_DIM || height>MAX_DIM){
+          const scale = MAX_DIM/Math.max(width,height);
+          width = Math.round(width*scale); height = Math.round(height*scale);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width=width; canvas.height=height;
+        canvas.getContext('2d').drawImage(img,0,0,width,height);
+        resolve(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
+      };
+      img.onerror = ()=>resolve(dataURL);
+      img.src = dataURL;
+    });
+  }
+
+  function nextPosition(parentId){
+    if(parentId){
+      const parent = frames.find(f=>f.id===parentId);
+      if(parent){
+        const childIndex = frames.filter(f=>f.parentId===parentId).length;
+        return layoutChildPosition(parent, childIndex);
+      }
+    }
+    return layoutPosition(counter-1);
+  }
+
+  async function handleCapturedFiles(fileList){
+    const files = Array.from(fileList);
+    const parentId = pendingParentId;
+    pendingParentId = null;
+    for(const file of files){
+      const raw = await fileToDataURL(file);
+      const img = await downscale(raw);
+      counter += 1; saveCounter();
+      const pos = nextPosition(parentId);
+      const frame = {
+        id: 'fr_'+Date.now()+'_'+counter,
+        num: counter,
+        type: 'photo',
+        parentId: parentId || null,
+        images: [img],
+        createdAt: new Date().toISOString(),
+        status: 'queued',
+        title: '', summary: '', tags: [], keyPoints: [], rawText: '', userNotes: '',
+        errorMsg: '',
+        x: pos.x, y: pos.y
+      };
+      frames.push(frame);
+      saveFrames();
+      renderNodes();
+      processFrame(frame.id);
+    }
+  }
+
+  function createNoteNode(parentId){
+    counter += 1; saveCounter();
+    const pos = nextPosition(parentId);
+    const frame = {
+      id: 'fr_'+Date.now()+'_'+counter,
+      num: counter,
+      type: 'note',
+      parentId: parentId || null,
+      images: [],
+      createdAt: new Date().toISOString(),
+      status: 'done',
+      title: '', summary: '', tags: [], keyPoints: [], rawText: '', userNotes: '',
+      errorMsg: '',
+      x: pos.x, y: pos.y
+    };
+    frames.push(frame);
+    saveFrames();
+    renderNodes();
+    openDrawer(frame.id);
+  }
+
+  // ---------- AI processing ----------
+  async function processFrame(id){
+    const frame = frames.find(f=>f.id===id);
+    if(!frame) return;
+    if(!settings.endpoint){
+      frame.status = 'error';
+      frame.errorMsg = 'No AI proxy URL set. Open Settings to add one, or fill this note in by hand.';
+      saveFrames(); renderNodes(); if(selectedId===id) openDrawer(id);
+      return;
+    }
+    frame.status = 'processing';
+    frame.errorMsg = '';
+    saveFrames(); renderNodes(); if(selectedId===id) openDrawer(id);
+    try{
+      const res = await fetch(settings.endpoint, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ image: frame.images[0] })
+      });
+      const data = await res.json().catch(()=>({}));
+      if(!res.ok) throw new Error(data.error || ('Proxy returned ' + res.status));
+      frame.title = data.title || 'Untitled frame';
+      frame.summary = data.summary || '';
+      frame.tags = Array.isArray(data.tags) ? data.tags : [];
+      frame.keyPoints = Array.isArray(data.keyPoints) ? data.keyPoints : [];
+      frame.rawText = data.rawText || '';
+      frame.status = 'done';
+    }catch(err){
+      frame.status = 'error';
+      frame.errorMsg = err.message || 'Something went wrong reaching the AI proxy.';
+    }
+    saveFrames(); renderNodes(); if(selectedId===id) openDrawer(id);
+  }
+
+  // ---------- canvas transform ----------
+  function applyTransform(){
+    world.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+    document.getElementById('zoom-reset-btn').textContent = Math.round(zoom*100) + '%';
+  }
+  function zoomAt(screenX, screenY, newZoom){
+    newZoom = Math.min(2.2, Math.max(0.3, newZoom));
+    const rect = viewport.getBoundingClientRect();
+    const cx = screenX - rect.left - rect.width/2;
+    const cy = screenY - rect.top - rect.height/2;
+    const worldX = (cx - panX)/zoom;
+    const worldY = (cy - panY)/zoom;
+    zoom = newZoom;
+    panX = cx - worldX*zoom;
+    panY = cy - worldY*zoom;
+    applyTransform();
+  }
+
+  // ---------- rendering ----------
+  function curvePath(x0, y0, x, y){
+    const dx = x-x0, dy = y-y0;
+    const mx = x0+dx/2, my = y0+dy/2;
+    const dist = Math.hypot(dx,dy) || 1;
+    const perpX = -dy/dist, perpY = dx/dist;
+    const bend = dist * 0.12;
+    const cx = mx + perpX*bend, cy = my + perpY*bend;
+    return `M${x0},${y0} Q${cx},${cy} ${x},${y}`;
+  }
+  function parentPoint(f){
+    if(f.parentId){
+      const p = frames.find(fr=>fr.id===f.parentId);
+      if(p) return {x:p.x, y:p.y};
+    }
+    return {x:0, y:0};
+  }
+
+  function statusLabel(f){
+    if(f.status==='queued') return 'Queued';
+    if(f.status==='processing') return 'Reading photo…';
+    if(f.status==='error') return 'Needs attention';
+    return 'Done';
+  }
+
+  function renderNodes(){
+    document.getElementById('empty-hint').style.display = frames.length ? 'none' : 'block';
+    renderConnectorsOnly();
+    // nodes
+    nodesLayer.innerHTML = '';
+    frames.forEach(f=>{
+      const node = document.createElement('div');
+      const isTarget = selectedId===f.id;
+      if(f.type === 'note'){
+        node.className = 'note-node' + (isTarget ? ' branch-target' : '');
+        node.style.left = f.x + 'px';
+        node.style.top = f.y + 'px';
+        node.innerHTML = `
+          <span class="note-icon">▤ ${f.num}</span>
+          <div class="node-title">${escapeHtml(f.title) || 'Untitled note'}</div>
+          <div class="note-body-preview">${escapeHtml(f.summary) || 'Empty note'}</div>`;
+      } else {
+        node.className = 'photo-node' + (isTarget ? ' branch-target' : '');
+        node.style.left = f.x + 'px';
+        node.style.top = f.y + 'px';
+        node.innerHTML = `
+          <div class="thumb-wrap">
+            <img src="${f.images[0]}" draggable="false">
+            <span class="node-badge">${f.num}</span>
+            <span class="node-status-dot ${f.status}"></span>
+          </div>
+          <div class="node-meta">
+            <div class="node-title">${escapeHtml(f.title) || (f.status==='queued'?'Waiting…':'Untitled')}</div>
+          </div>`;
+      }
+      attachNodeDrag(node, f);
+      nodesLayer.appendChild(node);
+    });
+  }
+
+  // ---------- node dragging vs click ----------
+  function attachNodeDrag(node, frame){
+    let startX, startY, moved, sx0, sy0;
+    node.addEventListener('pointerdown', (e)=>{
+      e.stopPropagation();
+      startX = e.clientX; startY = e.clientY; moved = false;
+      sx0 = frame.x; sy0 = frame.y;
+      node.setPointerCapture(e.pointerId);
+      const onMove = (ev)=>{
+        const dx = (ev.clientX-startX)/zoom, dy = (ev.clientY-startY)/zoom;
+        if(Math.abs(ev.clientX-startX)>4 || Math.abs(ev.clientY-startY)>4) moved = true;
+        frame.x = sx0+dx; frame.y = sy0+dy;
+        node.style.left = frame.x+'px'; node.style.top = frame.y+'px';
+        renderConnectorsOnly();
+      };
+      const onUp = ()=>{
+        node.removeEventListener('pointermove', onMove);
+        node.removeEventListener('pointerup', onUp);
+        if(moved){ saveFrames(); renderConnectorsOnly(); }
+        else { openDrawer(frame.id); }
+      };
+      node.addEventListener('pointermove', onMove);
+      node.addEventListener('pointerup', onUp);
+    });
+  }
+  function renderConnectorsOnly(){
+    svg.innerHTML = frames.map(f=>{
+      const p = parentPoint(f);
+      return `<g transform="translate(6000,6000)"><path d="${curvePath(p.x,p.y,f.x,f.y)}"></path></g>`;
+    }).join('');
+  }
+
+  // ---------- pan & zoom on viewport ----------
+  (function setupPanZoom(){
+    let panning=false, lastX=0, lastY=0;
+    viewport.addEventListener('pointerdown', (e)=>{
+      panning = true; lastX = e.clientX; lastY = e.clientY;
+      viewport.classList.add('panning');
+      viewport.setPointerCapture(e.pointerId);
+    });
+    viewport.addEventListener('pointermove', (e)=>{
+      if(!panning) return;
+      panX += (e.clientX-lastX); panY += (e.clientY-lastY);
+      lastX = e.clientX; lastY = e.clientY;
+      applyTransform();
+    });
+    function endPan(){ panning=false; viewport.classList.remove('panning'); }
+    viewport.addEventListener('pointerup', endPan);
+    viewport.addEventListener('pointercancel', endPan);
+
+    viewport.addEventListener('wheel', (e)=>{
+      e.preventDefault();
+      const delta = -e.deltaY * 0.0015;
+      zoomAt(e.clientX, e.clientY, zoom * (1+delta));
+    }, {passive:false});
+
+    // pinch zoom
+    let pinchStartDist = null, pinchStartZoom = 1;
+    viewport.addEventListener('touchstart', (e)=>{
+      if(e.touches.length===2){
+        pinchStartDist = Math.hypot(
+          e.touches[0].clientX-e.touches[1].clientX,
+          e.touches[0].clientY-e.touches[1].clientY
+        );
+        pinchStartZoom = zoom;
+      }
+    }, {passive:true});
+    viewport.addEventListener('touchmove', (e)=>{
+      if(e.touches.length===2 && pinchStartDist){
+        const dist = Math.hypot(
+          e.touches[0].clientX-e.touches[1].clientX,
+          e.touches[0].clientY-e.touches[1].clientY
+        );
+        const midX = (e.touches[0].clientX+e.touches[1].clientX)/2;
+        const midY = (e.touches[0].clientY+e.touches[1].clientY)/2;
+        zoomAt(midX, midY, pinchStartZoom * (dist/pinchStartDist));
+      }
+    }, {passive:true});
+    viewport.addEventListener('touchend', ()=>{ pinchStartDist=null; });
+  })();
+
+  // ---------- hub: branch target + rename ----------
+  const hubNode = document.getElementById('hub-node');
+  const hubLabel = document.getElementById('hub-label');
+  hubLabel.textContent = settings.hubName || 'Snap/Note';
+  document.title = (settings.hubName || 'Snap/Note');
+
+  document.getElementById('hub-edit-btn').addEventListener('click', (e)=>{
+    e.stopPropagation();
+    hubLabel.setAttribute('contenteditable','true');
+    hubLabel.focus();
+    document.execCommand('selectAll', false, null);
+  });
+  hubLabel.addEventListener('blur', ()=>{
+    hubLabel.removeAttribute('contenteditable');
+    const val = hubLabel.textContent.trim() || 'Snap/Note';
+    hubLabel.textContent = val;
+    settings.hubName = val;
+    saveSettings();
+    document.title = val;
+  });
+  hubLabel.addEventListener('keydown', (e)=>{
+    if(e.key==='Enter'){ e.preventDefault(); hubLabel.blur(); }
+  });
+
+  // ---------- note button ----------
+  document.getElementById('note-btn').addEventListener('click', ()=>{
+    createNoteNode(null);
+  });
+
+  document.getElementById('zoom-in-btn').addEventListener('click', ()=>{
+    const r = viewport.getBoundingClientRect();
+    zoomAt(r.left+r.width/2, r.top+r.height/2, zoom*1.25);
+  });
+  document.getElementById('zoom-out-btn').addEventListener('click', ()=>{
+    const r = viewport.getBoundingClientRect();
+    zoomAt(r.left+r.width/2, r.top+r.height/2, zoom*0.8);
+  });
+  document.getElementById('zoom-reset-btn').addEventListener('click', ()=>{
+    panX=0; panY=0; zoom=1; applyTransform();
+  });
+
+  // ---------- drawer ----------
+  const drawer = document.getElementById('drawer');
+  const drawerBackdrop = document.getElementById('drawer-backdrop');
+  function openDrawer(id){
+    selectedId = id;
+    renderDrawerContent();
+    drawer.classList.add('active');
+    drawerBackdrop.classList.add('active');
+    renderNodes();
+  }
+  function closeDrawer(){
+    drawer.classList.remove('active');
+    drawerBackdrop.classList.remove('active');
+    selectedId = null;
+    renderNodes();
+  }
+  document.getElementById('drawer-close').addEventListener('click', closeDrawer);
+  drawerBackdrop.addEventListener('click', closeDrawer);
+
+  function renderDrawerContent(){
+    const frame = frames.find(f=>f.id===selectedId);
+    const inner = document.getElementById('drawer-inner');
+    if(!frame){ inner.innerHTML=''; return; }
+    const isNote = frame.type === 'note';
+    inner.innerHTML = `
+      <div class="frame-tag-line">${isNote ? 'Note' : 'Frame'} ${frame.num} · ${new Date(frame.createdAt).toLocaleString()}</div>
+      <input class="title-input" id="d-title" placeholder="${isNote ? 'Untitled note' : 'Untitled frame'}" value="${escapeAttr(frame.title)}">
+
+      ${frame.status==='processing' ? `<div class="processing-banner" style="margin-top:16px;"><span class="node-status-dot processing" style="position:static;"></span>Reading the photo and drafting a note…</div>` : ''}
+      ${frame.status==='error' ? `<div class="error-banner" style="margin-top:16px;"><span>${escapeHtml(frame.errorMsg)}</span><button class="btn" id="d-retry">Retry</button></div>` : ''}
+
+      ${!isNote ? `
+      <div class="field-label">Photos</div>
+      <div class="photo-strip" id="d-photos"></div>
+      ` : ''}
+
+      <div class="field-label">${isNote ? 'Note' : 'Summary'}</div>
+      <textarea id="d-summary" rows="${isNote?6:3}" placeholder="${isNote ? 'Write your note…' : 'What this frame shows…'}">${escapeHtml(frame.summary)}</textarea>
+
+      <div class="field-label">Tags</div>
+      <div class="tags-row" id="d-tags"></div>
+
+      <div class="field-label">Key points</div>
+      <ul class="keypoints" id="d-keypoints"></ul>
+      <button class="add-kp-btn" id="d-add-kp">+ Add point</button>
+
+      ${frame.rawText ? `
+      <div class="field-label">Text found in photo</div>
+      <details class="raw-text"><summary>Show transcribed text</summary><pre>${escapeHtml(frame.rawText)}</pre></details>
+      ` : ''}
+
+      ${!isNote ? `
+      <div class="field-label">Your notes</div>
+      <textarea id="d-usernotes" rows="4" placeholder="Anything to add…">${escapeHtml(frame.userNotes)}</textarea>
+      ` : ''}
+
+      <div class="field-label">Branch from here</div>
+      <div class="branch-actions" style="display:flex;gap:8px;">
+        <button class="btn" id="d-branch-photo">+ Photo</button>
+        <button class="btn" id="d-branch-note">+ Note</button>
+      </div>
+
+      <div class="drawer-footer">
+        <button class="btn btn-warn" id="d-delete">Delete ${isNote?'note':'frame'}</button>
+        ${(!isNote && frame.status!=='processing') ? `<button class="btn" id="d-reprocess">Re-read with AI</button>` : ''}
+      </div>`;
+
+    if(!isNote){
+      const photosEl = document.getElementById('d-photos');
+      frame.images.forEach(src=>{
+        const img = document.createElement('img');
+        img.src = src;
+        img.addEventListener('click', ()=>openViewer(src));
+        photosEl.appendChild(img);
+      });
+    }
+
+    renderTags(frame);
+    renderKeyPoints(frame);
+
+    bindField('d-title', v=>{ frame.title=v; saveFrames(); renderNodes(); });
+    bindField('d-summary', v=>{ frame.summary=v; saveFrames(); renderNodes(); });
+    if(!isNote) bindField('d-usernotes', v=>{ frame.userNotes=v; saveFrames(); });
+
+    const retryBtn = document.getElementById('d-retry');
+    if(retryBtn) retryBtn.addEventListener('click', ()=>processFrame(frame.id));
+    const reprocessBtn = document.getElementById('d-reprocess');
+    if(reprocessBtn) reprocessBtn.addEventListener('click', ()=>processFrame(frame.id));
+
+    document.getElementById('d-branch-photo').addEventListener('click', ()=>{
+      pendingParentId = frame.id;
+      document.getElementById('camera-input').click();
+    });
+    document.getElementById('d-branch-note').addEventListener('click', ()=>{
+      createNoteNode(frame.id);
+    });
+
+    document.getElementById('d-delete').addEventListener('click', ()=>{
+      pendingDeleteId = frame.id;
+      document.getElementById('confirm-modal').classList.add('active');
+    });
+    document.getElementById('d-add-kp').addEventListener('click', ()=>{
+      frame.keyPoints.push('');
+      saveFrames(); renderDrawerContent();
+      const inputs = document.querySelectorAll('#d-keypoints input');
+      if(inputs.length) inputs[inputs.length-1].focus();
+    });
+  }
+
+  function renderTags(frame){
+    const row = document.getElementById('d-tags');
+    row.innerHTML = '';
+    frame.tags.forEach((tag,i)=>{
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip ' + tagColorClass(tag);
+      chip.innerHTML = `${escapeHtml(tag)} <button title="remove">×</button>`;
+      chip.querySelector('button').addEventListener('click', ()=>{
+        frame.tags.splice(i,1); saveFrames(); renderTags(frame);
+      });
+      row.appendChild(chip);
+    });
+    const input = document.createElement('input');
+    input.className = 'tag-add-input';
+    input.placeholder = '+ tag';
+    input.addEventListener('keydown', (e)=>{
+      if(e.key==='Enter' && input.value.trim()){
+        frame.tags.push(input.value.trim().toLowerCase());
+        saveFrames(); renderTags(frame);
+      }
+    });
+    row.appendChild(input);
+  }
+
+  function renderKeyPoints(frame){
+    const list = document.getElementById('d-keypoints');
+    list.innerHTML = '';
+    frame.keyPoints.forEach((kp,i)=>{
+      const li = document.createElement('li');
+      const input = document.createElement('input');
+      input.value = kp;
+      input.addEventListener('input', ()=>{ frame.keyPoints[i]=input.value; saveFrames(); });
+      const del = document.createElement('button');
+      del.className = 'kp-del'; del.textContent = '×';
+      del.addEventListener('click', ()=>{ frame.keyPoints.splice(i,1); saveFrames(); renderKeyPoints(frame); });
+      li.appendChild(input); li.appendChild(del);
+      list.appendChild(li);
+    });
+  }
+
+  function bindField(id, onChange){
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.addEventListener('input', ()=>onChange(el.value));
+  }
+  function escapeHtml(s){
+    if(!s) return '';
+    return s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function escapeAttr(s){ return escapeHtml(s); }
+
+  // ---------- capture ----------
+  document.getElementById('capture-btn').addEventListener('click', ()=>{
+    pendingParentId = null;
+    document.getElementById('camera-input').click();
+  });
+  document.getElementById('camera-input').addEventListener('change', (e)=>{
+    if(e.target.files.length) handleCapturedFiles(e.target.files);
+    e.target.value = '';
+  });
+
+  // ---------- settings modal ----------
+  const settingsModal = document.getElementById('settings-modal');
+  document.getElementById('settings-btn').addEventListener('click', ()=>{
+    document.getElementById('endpoint-input').value = settings.endpoint || '';
+    settingsModal.classList.add('active');
+  });
+  document.getElementById('settings-cancel').addEventListener('click', ()=>settingsModal.classList.remove('active'));
+  document.getElementById('settings-save').addEventListener('click', ()=>{
+    settings.endpoint = document.getElementById('endpoint-input').value.trim();
+    saveSettings();
+    settingsModal.classList.remove('active');
+  });
+
+  // ---------- image viewer modal ----------
+  const viewerModal = document.getElementById('viewer-modal');
+  function openViewer(src){
+    document.getElementById('viewer-img').src = src;
+    viewerModal.classList.add('active');
+  }
+  document.getElementById('viewer-close').addEventListener('click', ()=>viewerModal.classList.remove('active'));
+  viewerModal.addEventListener('click', (e)=>{ if(e.target===viewerModal) viewerModal.classList.remove('active'); });
+
+  // ---------- confirm delete modal ----------
+  const confirmModal = document.getElementById('confirm-modal');
+  document.getElementById('confirm-cancel').addEventListener('click', ()=>{
+    pendingDeleteId = null; confirmModal.classList.remove('active');
+  });
+  document.getElementById('confirm-ok').addEventListener('click', ()=>{
+    frames.forEach(f=>{ if(f.parentId===pendingDeleteId) f.parentId=null; });
+    frames = frames.filter(f=>f.id!==pendingDeleteId);
+    if(selectedId===pendingDeleteId) closeDrawer();
+    saveFrames();
+    confirmModal.classList.remove('active');
+    renderNodes();
+  });
+
+  // ---------- export ----------
+  document.getElementById('export-btn').addEventListener('click', ()=>{
+    const blob = new Blob([JSON.stringify({frames, counter}, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'snapnote-backup-'+new Date().toISOString().slice(0,10)+'.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // ---------- init ----------
+  applyTransform();
+  renderNodes();
+})();
+</script>
+</body>
+</html>
